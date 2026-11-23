@@ -1,34 +1,32 @@
 # Vision-Based Gesture Control for Unitree Go2
 
-An undergraduate robotics project exploring how hand gestures can provide a natural, camera-based interface for high-level control of a Unitree Go2 quadruped.
+An undergraduate robotics project exploring a camera-based hand-gesture interface for supervised high-level control of a Unitree Go2 quadruped.
 
 ## Project overview
 
-The prototype uses a webcam, MediaPipe hand-gesture recognition, and Unitree SDK 2 to interpret static hand poses and map them to high-level robot commands. The work focuses on reliable command triggering, state-aware behavior, and supervised posture transitions.
-
-## Current work
-
-- Recognizes hand gestures from camera input and stabilizes detections across consecutive frames before acting.
-- Maps selected gestures to high-level commands, with a dedicated posture-only mode for supervised testing.
-- Monitors robot state and telemetry to check whether posture transitions have completed.
-- Uses fail-closed checks, neutral-gesture re-arming, cancellation handling, and bounded command attempts to reduce unintended actions.
-- Maintains diagnostic logs and offline tests to investigate state transitions and error handling.
-
-## Development status
-
-This is an active prototype. The latest posture-only changes are awaiting another physical-robot verification pass. In particular, gesture-triggered recovery to standing has not yet been confirmed on the robot. The project does not claim a fully validated end-to-end gesture-control system.
-
-## Tools and technologies
-
-- Python
-- MediaPipe hand-gesture recognition and hand landmarks
-- Unitree SDK 2 Python interface
-- Unitree Go2 quadruped
-
-## Safety and scope
-
-Physical-robot tests are supervised and constrained to a small set of posture commands. Walking and path-control behavior are not described here as validated features. Machine-specific network settings, credentials, personal logs, and robot identifiers are intentionally excluded from this overview.
+The prototype combines a camera, MediaPipe hand-gesture recognition, and Unitree SDK 2. It includes gesture stabilization, high-level command mapping, posture-state telemetry, fail-closed checks, and diagnostic logging.
 
 ## Repository contents
 
-This draft is intended as a project overview only. Source files, model assets, dependencies, and test instructions should be added only after a separate review for private configuration, safety implications, and redistribution terms.
+- Three Python program modules: camera gesture recognition, combined gesture/path preview, and Go2 high-level control.
+- Offline regression tests in test_go2_real_gesture_move.py.
+- MediaPipe model bundle in gesture_recognizer.task.
+- An anonymized archive of diagnostic and offline test logs in logs_anonymized.zip.
+- DEVELOPMENT_NOTES.md with current status and safety notes.
+- THIRD_PARTY_NOTICES.md with model attribution and licensing information.
+
+The example network addresses in the source are generic private-network placeholders. Set the values for your own network before connecting to a robot.
+
+## Development status
+
+This remains an active prototype. The latest posture-only changes are awaiting another physical-robot verification pass. Gesture-triggered recovery to standing has not yet been confirmed on the robot. The project does not claim a fully validated end-to-end gesture-control system.
+
+## Safety and scope
+
+Start in camera preview mode. Only enable physical motion in a clear area with an onsite operator and an accessible hardware stop. Posture commands remain restricted following an observed abrupt descent and RPC timeouts. This research prototype is not safety-rated control software.
+
+## Privacy and media
+
+Local paths and machine-specific network details were redacted from the public copy. The logs archive contains text diagnostics; image samples and hand-landmark captures were excluded. No video files were found in the project directory during this upload.
+
+See DEVELOPMENT_NOTES.md for additional context.
