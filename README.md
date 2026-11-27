@@ -6,6 +6,11 @@ An undergraduate robotics project exploring a camera-based hand-gesture interfac
 
 The prototype combines a camera, MediaPipe hand-gesture recognition, and Unitree SDK 2. It includes gesture stabilization, high-level command mapping, posture-state telemetry, fail-closed checks, and diagnostic logging.
 
+## Demo videos
+
+- [Version 3](https://youtube.com/shorts/0KPLzOxJmhk)
+- [Version 4](https://youtube.com/shorts/qXpzstQ1TF8)
+
 ## Repository contents
 
 - Three Python program modules: camera gesture recognition, combined gesture/path preview, and Go2 high-level control.
@@ -27,6 +32,6 @@ Start in camera preview mode. Only enable physical motion in a clear area with a
 
 ## Privacy and media
 
-Local paths and machine-specific network details were redacted from the public copy. The logs archive contains text diagnostics; image samples and hand-landmark captures were excluded. No video files were found in the project directory during this upload.
+Local paths and machine-specific network details were redacted from the public copy. The logs archive contains text diagnostics; image samples and hand-landmark captures were excluded. Demo videos are linked on YouTube rather than stored as raw video files in this repository.
 
 See DEVELOPMENT_NOTES.md for additional context.
