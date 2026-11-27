@@ -4,8 +4,8 @@
 SAFE LAB DIAGNOSTIC ONLY. No robot motion clients, publishers, UDP control,
 or actuation APIs are initialized. All commands are PRINTED, never executed.
 
-WSL2 with Windows mirrored networking: Robot NIC=eth0 (192.168.1.3),
-robot peer=192.168.1.2. Adjust based on actual machine network.
+WSL2 with Windows mirrored networking: Robot NIC=eth0 (192.168.123.99),
+robot peer=192.168.123.161. Adjust based on actual machine network.
 """
 from __future__ import annotations
 
@@ -30,6 +30,76 @@ from go2_gesture_camera_combined_v09 import (
     SAMPLE_INTERVAL,
     MIN_POINT_DELTA,
 )
+
+# Real-camera commands are independent of the legacy simulation's turn gestures.
+# LEFT/RIGHT refer to the operator facing the robot, in the mirrored image.
+STATIC_COMMANDS = {
+    'Open_Palm': 'STAND', 'Closed_Fist': 'CROUCH',
+    'Thumb_Up': 'FORWARD', 'Thumb_Down': 'BACKWARD',
+    'Point_Left': 'MOVE_LEFT', 'Point_Right': 'MOVE_RIGHT',
+}
+
+
+def recognize_lateral_point(landmarks, image_aspect=1.0):
+    """Horizontal index + raised thumb; other three fingers folded.
+
+    Returns a direction in the already MIRRORED inference image: image-left
+    means the facing operator's left. Rule match is not model confidence.
+    Pixel-aspect-corrected geometry works with either hand, without handedness.
+    """
+    if landmarks is None or len(landmarks) != 21:
+        return None
+    try:
+        if not math.isfinite(image_aspect) or image_aspect <= 0:
+            return None
+        raw = [(float(p.x), float(p.y)) for p in landmarks]
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if any(not math.isfinite(v) or not .01 <= v <= .99 for point in raw for v in point):
+        return None
+    points = [(x, y / image_aspect) for x, y in raw]
+
+    def dist(a, b):
+        return math.dist(points[a], points[b])
+
+    def angle(a, b, c):
+        u = (points[a][0] - points[b][0], points[a][1] - points[b][1])
+        v = (points[c][0] - points[b][0], points[c][1] - points[b][1])
+        size = math.hypot(*u) * math.hypot(*v)
+        if size < 1e-8:
+            return 0.0
+        return math.degrees(math.acos(max(-1., min(1., (u[0]*v[0] + u[1]*v[1]) / size))))
+
+    palm = dist(5, 17)
+    if palm < .035 or dist(0, 9) < .035:
+        return None
+    dx, dy = points[8][0] - points[5][0], points[8][1] - points[5][1]
+    if (abs(dx) < .85 * palm or abs(dx) < 2 * abs(dy)
+            or angle(5, 6, 7) < 155 or angle(6, 7, 8) < 155
+            or dist(5, 6) < .01 or dist(5, 8) < 1.7 * dist(5, 6)):
+        return None
+    for mcp, pip, tip in ((9, 10, 12), (13, 14, 16), (17, 18, 20)):
+        # A side-on curled finger can extend past its MCP in projection;
+        # require a bent joint plus either a compact finger or wristward tip.
+        compact = dist(mcp, tip) <= 1.35 * dist(mcp, pip)
+        wristward = dist(0, tip) <= .85 * dist(0, pip)
+        if (dist(mcp, pip) < .01 or angle(mcp, pip, tip) > 135
+                or not (compact or wristward)):
+            return None
+    if (angle(2, 3, 4) < 145 or dist(2, 3) < .01
+            or dist(2, 4) < 1.35 * dist(2, 3)
+            or points[4][1] > points[2][1] - .35 * palm
+            or points[4][1] > points[5][1] - .25 * palm):
+        return None
+    # Perspective compresses a raised thumb/index L: the real Go2 samples
+    # measured 36..42 degrees while all other pose checks passed. Accept
+    # 30..150 degrees; retain raised-thumb, straight-index and folded-finger
+    # checks above, and reject nearly parallel fingers.
+    tx, ty = points[4][0] - points[2][0], points[4][1] - points[2][1]
+    cosine = (dx*tx + dy*ty) / (math.hypot(dx, dy) * math.hypot(tx, ty))
+    if abs(cosine) > math.cos(math.radians(30)):
+        return None
+    return 'Point_Left' if dx < 0 else 'Point_Right'
 
 
 def configure_unitree_dds(interface: str, peer: str) -> None:
@@ -102,9 +172,13 @@ def classify(result, mode: str, *, fist_fallback=False, image_aspect=1.0, path_e
         tip = (max(0.0, min(1.0, float(lm[8].x))),
                max(0.0, min(1.0, float(lm[8].y))))
         is_six = recognize_chinese_six(lm)
+        point = recognize_lateral_point(lm, image_aspect) if mode == 'IDLE' else None
         is_four = path_enabled and not is_six and recognize_four_fingers(lm)
         if is_six:
             label, confidence, rule = 'Chinese_Six', 1.0, 'landmark rule'
+        elif point:
+            label, confidence, rule = point, 1.0, 'lateral point landmark rule (not model confidence)'
+            is_four = False
         elif is_four:
             label, confidence, rule = 'Four_Fingers', 1.0, 'landmark rule'
         elif mode == 'IDLE' and recognize_thumb_index_middle(lm):
@@ -119,7 +193,7 @@ class ReadOnlyGestureSession:
     def __init__(self, preview_only=True, path_enabled=True):
         self.preview_only = preview_only
         self.path_enabled = path_enabled
-        self.db = StaticGestureDebouncer()
+        self.db = StaticGestureDebouncer(commands=STATIC_COMMANDS)
         self.four = FourFingerTrigger()
         self.six = SixInterruptTrigger()
         self.mode = 'IDLE'
@@ -136,7 +210,7 @@ class ReadOnlyGestureSession:
             self.mode = 'IDLE'
             self.points.clear()
             self.planned.clear()
-            self.db = StaticGestureDebouncer()
+            self.db = StaticGestureDebouncer(commands=STATIC_COMMANDS)
             print('[SIX] CANCEL / RETURN TO STATIC.', flush=True)
 
         if self.path_enabled and self.four.update(is_four, now):
@@ -205,7 +279,7 @@ def self_test():
 def main():
     parser = argparse.ArgumentParser(description='READ-ONLY Go2 front-camera gesture test (no motor control)')
     parser.add_argument('--interface', default='eth0', help='Robot-facing Linux interface; default eth0')
-    parser.add_argument('--peer', default='192.168.1.2', help='Robot DDS peer IP')
+    parser.add_argument('--peer', default='192.168.123.161', help='Robot DDS peer IP')
     parser.add_argument('--model', default='gesture_recognizer.task')
     parser.add_argument('--width', type=int, default=960, help='Inference frame width; default 960')
     parser.add_argument('--fps', type=float, default=8, help='Target processing FPS; default 8')
@@ -241,7 +315,7 @@ def main():
         raise SystemExit('[CAMERA ERROR] Invalid JPEG frame')
     print(f'[CONNECTED] Go2 camera {frame.shape[1]}x{frame.shape[0]} via {args.interface}', flush=True)
     print('[SAFE] READ ONLY: NO movement, no ROS command publishing, no UDP to robot.', flush=True)
-    print('[GESTURES] 6 static commands, FOUR x3 path preview, SIX cancels path.', flush=True)
+    print('[GESTURES] Point_Left/Right=lateral (operator view), V/three fingers disabled; FOUR=path preview, SIX=cancel.', flush=True)
     if args.save_first_frame:
         image_path = Path('go2_camera_first_frame.jpg').resolve()
         image_path.write_bytes(bytes(jpeg))
@@ -283,7 +357,8 @@ def main():
                 ms = max(last_ms + 1, int((now - start) * 1000))
                 last_ms = ms
                 result = recognizer.recognize_for_video(image, ms)
-                label, score, tip, is_four, is_six, rule = classify(result, session.mode)
+                label, score, tip, is_four, is_six, rule = classify(
+                    result, session.mode, image_aspect=infer.shape[1] / infer.shape[0])
                 session.consume(label, score, tip, is_four, is_six, rule, now)
                 count += 1
                 if count % 80 == 0:
